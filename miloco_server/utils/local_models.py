@@ -127,32 +127,28 @@ class LocalModels:
 
         try:
             response.raise_for_status()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Check if not response
+            if not response:
+                logger.error("No response received from %s", target_url)
+                raise LLMServiceException("No response received from local model service")
             # Check if response content is empty
             if not response.content:
                 logger.error("Empty response received from %s", target_url)
                 raise LLMServiceException("Received empty response from local model service")
-            # Try to parse JSON safely
-            try:
-                return response.json()
-            except Exception as json_error:
-                logger.error(
-                    "Failed to parse JSON response from %s: %s. Response content: %s",
-                    target_url, str(json_error), response.text)
-                raise LLMServiceException("Failed to parse response from local model service") from json_error
-        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Check if response content is not JSON
+            if not response.is_json():
+                logger.error("Response content is not JSON from %s", target_url)
+                raise LLMServiceException("Received non-JSON response from local model service")
+
             # Handle HTTP errors
-            try:
-                error_data = response.json()
-                if error_data and error_data.get("code", None) and error_data.get("message", None):
-                    logger.error("Forward local model service failed: errCode[%s]: %s",
-                                error_data["code"], error_data["message"])
-                    raise LLMServiceException(error_data["message"]) from e
-                else:
-                    logger.error("Forward local model service failed: %s", e)
-                    raise LLMServiceException(f"Forward local model service failed: {str(e)}") from e
-            except Exception:
-                # If we can't parse error response as JSON, log the raw text
-                logger.error(
-                    "Forward local model service failed: %s. Response text: %s", 
-                    e, response.text if response else "No response")
-                raise LLMServiceException("Forward local model service failed: can't parse error response") from e
+            error_data = response.json()
+            if error_data and error_data.get("code", None) and error_data.get("message", None):
+                logger.error("Forward local model service failed: errCode[%s]: %s",
+                            error_data["code"], error_data["message"])
+                raise LLMServiceException(error_data["message"]) from e
+            else:
+                logger.error("Forward local model service failed: %s", e)
+                raise LLMServiceException(f"Forward local model service failed: {str(e)}") from e
+        
+        return response.json()
